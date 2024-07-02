@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Moving Red Ball and Static Green Cube</title>
+  <style>
+    body { margin: 0; }
+    canvas { display: block; }
+    #score, #lives {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: white;
+      font-size: 20px;
+      z-index: 1;
+    }
+    #lives {
+      top: 40px; /* Position lives below the score */
+    }
+  </style>
+</head>
+<body>
+  <div id="score">Score: 0</div>
+  <div id="lives">Lives: 3</div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+    // Scene setup
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Surface
+    const surfaceGeometry = new THREE.PlaneGeometry(10, 10);
+    const surfaceMaterial = new THREE.MeshBasicMaterial({color: 0x808080, side: THREE.DoubleSide});
+    const surface = new THREE.Mesh(surfaceGeometry, surfaceMaterial);
+    surface.rotation.x = Math.PI / 2;
+    scene.add(surface);
+
+    // Green Cube (Static)
+    const greenCubeGeometry = new THREE.BoxGeometry(1, 1, 1);
+    const greenCubeMaterial = new THREE.MeshBasicMaterial({color: 0x00ff00});
+    const greenCube = new THREE.Mesh(greenCubeGeometry, greenCubeMaterial);
+    greenCube.position.set(0, 0.5, 0);
+    scene.add(greenCube);
+
+    // Jump logic
+    let isJumping = false;
+    let velocity = 0;
+    const gravity = -0.01;
+    const jumpStrength = 0.4; // Increased jump strength
+    let jumpStarted = false; // Flag to track if a jump has started
+
+    document.addEventListener('keydown', (event) => {
+      if (event.code === 'Space' && !isJumping) {
+        isJumping = true;
+        velocity = jumpStrength;
+        jumpStarted = true; // Set the flag when a jump starts
+      }
+    });
+
+    // Mouse movement logic
+    let mouseX = 0;
+    let mouseY = 0;
+
+    document.addEventListener('mousemove', (event) => {
+      mouseX = (event.clientX / window.innerWidth) * 2 - 1;
+      mouseY = -(event.clientY / window.innerHeight) * 2 + 1;
+    });
+
+    // Red Ball (Moving)
+    const redBallGeometry = new THREE.SphereGeometry(0.5, 32, 32); // Create a sphere with radius 0.5
+    const redBallMaterial = new THREE.MeshBasicMaterial({color: 0xff0000});
+    let redBalls = [];
+
+    function createRedBall() {
+      let redBall = new THREE.Mesh(redBallGeometry, redBallMaterial);
+      redBall.position.set(5, 0.5, 0);
+      redBalls.push(redBall);
+      scene.add(redBall);
+    }
+
+    // Create the first red ball
+    createRedBall();
+
+    // Load texture for the 3D background
+    const loader = new THREE.CubeTextureLoader();
+    const texture = loader.load([
+      'https://devday2.s3.ap-south-1.amazonaws.com/Rainforest/nx.png', // right
+      'https://devday2.s3.ap-south-1.amazonaws.com/Rainforest/ny.png', // left
+      'https://devday2.s3.ap-south-1.amazonaws.com/Rainforest/nz.png', // top
+      'https://devday2.s3.ap-south-1.amazonaws.com/Rainforest/px.png', // bottom
+      'https://devday2.s3.ap-south-1.amazonaws.com/Rainforest/py.png', // front
+      'https://devday2.s3.ap-south-1.amazonaws.com/Rainforest/pz.png'  // back
+    ]);
+    scene.background = texture;
+
+    // Camera position
+    camera.position.z = 15;
+    camera.position.y = 5;
+
+    // Check collision
+    function checkCollision(cube1, cube2) {
+      const cube1Box = new THREE.Box3().setFromObject(cube1);
+      const cube2Box = new THREE.Box3().setFromObject(cube2);
+      return cube1Box.intersectsBox(cube2Box);
+    }
+
+    // Score and lives
+    let score = 0;
+    let lives = 3;
+    const scoreElement = document.getElementById('score');
+    const livesElement = document.getElementById('lives');
+
+    // Animation
+    const speed = 0.05;
+    function animate() {
+      requestAnimationFrame(animate);
+
+      redBalls.forEach((redBall, index) => {
+        redBall.position.x -= speed;
+        if (redBall.position.x < -5) {
+          scene.remove(redBall);
+          redBalls.splice(index, 1);
+          createRedBall(); // Create a new red ball after the previous one has moved past the surface's edge
+        }
+
+        // Check for collision
+        if (checkCollision(greenCube, redBall)) {
+          if (greenCube.position.y > redBall.position.y + 0.5) {
+            // Green cube jumps on red ball
+            scene.remove(redBall);
+            redBalls.splice(index, 1);
+            createRedBall(); // Create a new red ball after the previous one is removed
+          } else {
+            // Green cube collides with red ball
+            lives -= 1;
+            livesElement.textContent = `Lives: ${lives}`;
+          }
+        }
+      });
+
+      // Green cube jump
+      if (isJumping) {
+        velocity += gravity;
+        greenCube.position.y += velocity;
+        if (greenCube.position.y <= 0.5) {
+          greenCube.position.y = 0.5;
+          isJumping = false;
+          if (jumpStarted) {
+            score += 1; // Increment score when the jump ends without collision
+            scoreElement.textContent = `Score: ${score}`;
+            jumpStarted = false; // Reset the flag
+          }
+          velocity = 0;
+        }
+      }
+
+      // Update camera position based on mouse movement
+      camera.position.x = mouseX * 10; // Adjust the multiplier to control the range of movement
+      camera.position.y = 5 + mouseY * 5; // Adjust the multiplier to control the range of movement
+      camera.lookAt(scene.position); // Ensure the camera is always looking at the center of the scene
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    // Handle window resize
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
+
